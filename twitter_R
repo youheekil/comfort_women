@@ -1,0 +1,162 @@
+
+
+library("base64enc")
+library("twitteR")
+library("ROAuth")
+library("devtools")
+library("memoise")
+library("whisker")
+library("rstudioapi")
+library("git2r")
+library("withr")
+library("rjson")
+library("bit64")
+library ("httr")
+library ("httpuv")
+
+api_key <- "glDRp5aQdnlAbZumatVyFVxPr"
+
+api_secret <- "ypthG3NHXUV3do9nDZUlUUuYgvBf5BsAiWSoIAKi0bPpeI6oRe"
+
+access_token <- "918997877745008646-yVGKYanITgQA6ruRnV1RG8Vr3wDk4tC"
+
+access_token_secret <- "rHvhmWHvVMkLeb279w8Fhr3gUqXAmZKJ2JHPnl8zdlHA7"
+
+
+setup_twitter_oauth(api_key, api_secret, access_token, access_token_secret)
+tweets <- searchTwitter('#comfortwomen', n=900)
+
+n.tweet <- length(tweets)
+# convert tweets to a data frame 
+tweets.df <- twListToDF(tweets)
+
+# Text Cleaning 
+library(NLP)
+library(tm)
+# build a corpus, and specify the source to be character vectors
+myCorpus <- Corpus(VectorSource(tweets.df$text))
+# convert to lower case
+myCorpus <- tm_map(myCorpus, content_transformer(tolower))
+# remove URLs
+removeURL <- function(x) gsub("http[^[:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeURL))
+# remove anything other than English letters or space
+removeNumPunct <- function(x) gsub("[^[:alpha:][:space:]]*", "", x)
+myCorpus <- tm_map(myCorpus, content_transformer(removeNumPunct))
+# remove stopwords
+myStopwords <- c(setdiff(stopwords('english'), c("r", "big")),
+                 "use", "see", "used", "via", "amp")
+myCorpus <- tm_map(myCorpus, removeWords, myStopwords)
+# remove extra whitespace
+myCorpus <- tm_map(myCorpus, stripWhitespace)
+# keep a copy for stem completion later
+myCorpusCopy <- myCorpus
+
+#STEMING 
+myCorpus <- tm_map(myCorpus, stemDocument) # stem words
+writeLines(strwrap(myCorpus[[190]]$content, 60))
+## r refer card data mine now provid link packag cran packag
+## mapreduc hadoop ad
+stemCompletion2 <- function(x, dictionary) {
+  x <- unlist(strsplit(as.character(x), " "))
+  x <- x[x != ""]
+  x <- stemCompletion(x, dictionary=dictionary)
+  x <- paste(x, sep="", collapse=" ")
+  PlainTextDocument(stripWhitespace(x))
+}
+myCorpus <- lapply(myCorpus, stemCompletion2, dictionary=myCorpusCopy)
+myCorpus <- Corpus(VectorSource(myCorpus))
+writeLines(strwrap(myCorpus[[190]]$content, 60))
+## r reference card data miner now provided link package cran
+## package mapreduce hadoop add
+
+
+# count word frequence
+wordFreq <- function(corpus, word) {
+  results <- lapply(corpus,
+                    function(x) { grep(as.character(x), pattern=paste0("\\<",word)) }
+  )
+  sum(unlist(results))
+}
+n.miner <- wordFreq(myCorpusCopy, "japan")
+n.mining <- wordFreq(myCorpusCopy, "korea")
+cat(n.miner, n.mining)
+## 9 104
+# replace oldword with newword
+replaceWord <- function(corpus, oldword, newword) {
+  tm_map(corpus, content_transformer(gsub),
+         pattern=oldword, replacement=newword)
+}
+myCorpus <- replaceWord(myCorpus, "miner", "mining")
+myCorpus <- replaceWord(myCorpus, "universidad", "university")
+myCorpus <- replaceWord(myCorpus, "scienc", "science")
+
+myCorpus <- tm_map(myCorpus, removeNumbers)   
+
+12 / 40
+
+#Build Term Document Matrix
+
+tdm <- TermDocumentMatrix(myCorpus,control = list(wordLengths = c(1, Inf)))
+
+(freq.terms <- findFreqTerms(tdm, lowfreq = 20))
+
+term.freq <- rowSums(as.matrix(tdm))
+term.freq <- subset(term.freq, term.freq >= 20)
+df <- data.frame(term = names(term.freq), freq = term.freq)
+nrow(df)
+library(ggplot2)
+ggplot(df, aes(x=term, y=freq)) + geom_bar(stat="identity") +
+  xlab("Terms") + ylab("Count") + coord_flip() +
+  theme(axis.text=element_text(size=7))
+
+
+m <- as.matrix(tdm)
+# calculate the frequency of words and sort it by frequency
+word.freq <- sort(rowSums(m), decreasing = T)
+# colors
+pal <- brewer.pal(9, "BuGn")[-(1:4)]
+# plot word cloud
+library(RColorBrewer)
+library(wordcloud)
+ 
+set.seed(142)   
+dark2 <- brewer.pal(6, "Dark2")   
+wordcloud(names(word.freq), word.freq, max.words=100, colors=dark2)  
+
+
+
+#Clusting by Term Similarity
+#remove a lot of the uninteresting or infrequent words. 
+dtmss <- removeSparseTerms(dtm, 0.15) # This makes a matrix that is only 15% empty space, maximum.   
+dtmss
+
+#Hierarchal Clustering 
+#First calculate distance between words & then cluster them according to similarity.
+
+library(cluster)   
+d <- dist(t(dtmss), method="euclidian")   
+fit <- hclust(d=d, method="complete")   # for a different look try substituting: method="ward.D"
+fit
+plot(fit, hang=-1)   
+
+#K-means clustering 
+#The k-means clustering method will attempt to cluster words into a specified number of 
+#groups (in this case 2), such that the sum of squared distances between individual words
+#and one of the group centers. You can change the number of groups you seek by changing the number specified within the kmeans() command.
+library(fpc)   
+d <- dist(t(dtmss), method="euclidian")   
+kfit <- kmeans(d, 2)   
+clusplot(as.matrix(d), kfit$cluster, color=T, shade=T, labels=2, lines=0)
+
+
+findAssocs(tdm, "korea", 0.2)
+findAssocs(tdm, "japan", 0.2)
+
+
+
+#Modeling 
+dtm <- as.DocumentTermMatrix(tdm)
+library(topicmodels)
+lda <- LDA(dtm, k = 8) #find 8 topics
+term <- terms(lda, 7)
